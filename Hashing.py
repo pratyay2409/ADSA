@@ -1,194 +1,181 @@
+import matplotlib.pyplot as plt
+
+METHODS = {
+    1: "Separate Chaining",
+    2: "Linear Probing",
+    3: "Quadratic Probing",
+    4: "Double Hashing",
+}
+
+
 def is_prime(n):
     if n < 2:
         return False
-
     for i in range(2, int(n**0.5) + 1):
         if n % i == 0:
             return False
-
     return True
 
 
 def find_R(size):
-    for r in range(size - 1, 1, -1):
-        if is_prime(r):
-            return r
-    return 2
+    for n in range(size - 1, 1, -1):
+        if is_prime(n):
+            return n
+    return 2  # Fallback for a table size of 3
 
 
 class HashTable:
     def __init__(self, size, method):
-        self.size = size
-        self.method = method
+        self.size, self.method = size, method
+        self.R = find_R(size)
         self.table = [[] for _ in range(size)] if method == 1 else [None] * size
-        self.count = 0
-        self.collisions = 0
-        self.total_probes = 0
-        self.keys_inserted = []
-        self.R = find_R(size) if method == 4 else None
+        self.count = self.collisions = self.total_probes = 0
 
     def hash_function(self, key):
         return key % self.size
 
     def probe(self, key, i):
         index = self.hash_function(key)
-
         if self.method == 2:
             return (index + i) % self.size
-
-        elif self.method == 3:
+        if self.method == 3:
             return (index + i * i) % self.size
+        step = self.R - key % self.R
+        return (index + i * step) % self.size
 
-        elif self.method == 4:
-            step = self.R + (key % self.R)
-
-            # Avoid a zero step after modulo reduction.
-            step %= self.size
-            if step == 0:
-                step = 1
-
-            return (index + i * step) % self.size
-
-    def insert(self, key, silent=False):
-        if key < 0:
-            if not silent:
-                print("Only non-negative keys are allowed.")
-            return False
-
-        index = self.hash_function(key)
+    def insert(self, key, report=True):
+        index, probes = self.hash_function(key), 0
 
         if self.method == 1:
-            if key in self.table[index]:
-                if not silent:
-                    print("Duplicate key. Insertion rejected.")
+            bucket = self.table[index]
+            if key in bucket:
+                if report:
+                    print("Duplicate key. Insertion skipped.")
                 return False
-
-            if self.table[index]:
+            probes = len(bucket) + 1
+            self.collisions += bool(bucket)
+            bucket.insert(0, key)
+            pos = index
+        else:
+            for i in range(self.size):
+                pos = self.probe(key, i)
+                probes += 1
+                if self.table[pos] == key:
+                    if report:
+                        print("Duplicate key. Insertion skipped.")
+                    return False
+                if self.table[pos] is None:
+                    self.table[pos] = key
+                    break
                 self.collisions += 1
-
-            self.table[index].append(key)
-            self.count += 1
-            self.keys_inserted.append(key)
-
-            if not silent:
-                print(f"Key {key} inserted successfully at index {index}.")
-            return True
-
-        for i in range(self.size):
-            pos = self.probe(key, i)
-
-            if self.table[pos] == key:
-                if not silent:
-                    print("Duplicate key. Insertion rejected.")
+            else:
+                if report:
+                    print("No available slot found.")
                 return False
 
-            if self.table[pos] is None:
-                self.table[pos] = key
-                self.count += 1
-                self.total_probes += i + 1
-                self.keys_inserted.append(key)
-
-                if not silent:
-                    print(f"Key {key} inserted successfully at index {pos}.")
-                return True
-
-            self.collisions += 1
-
-        if not silent:
-            print(f"Unable to insert key {key}. No available slot in probe sequence.")
-        return False
+        self.count += 1
+        self.total_probes += probes
+        if report:
+            if self.method == 1:
+                print(f"Key {key} inserted in bucket {index}.")
+            else:
+                print(f"Key {key} inserted at index {pos}.")
+            print("Probes:", probes)
+        return True
 
     def search(self, key):
-        index = self.hash_function(key)
-
+        index, probes = self.hash_function(key), 0
         if self.method == 1:
-            if key in self.table[index]:
-                print(f"Key {key} found at index {index}.")
-            else:
-                print(f"Key {key} not found.")
-            return
+            positions = [(index, value) for value in self.table[index]]
+        else:
+            positions = [(self.probe(key, i), None) for i in range(self.size)]
 
-        for i in range(self.size):
-            pos = self.probe(key, i)
-
-            if self.table[pos] is None:
+        for pos, value in positions:
+            probes += 1
+            current = value if self.method == 1 else self.table[pos]
+            if self.method != 1 and current is None:
                 break
+            if current == key:
+                if self.method == 1:
+                    print(f"Key {key} found in bucket {index}.")
+                else:
+                    print(f"Key {key} found at index {pos}.")
+                print("Probes:", probes)
+                return True
 
-            if self.table[pos] == key:
-                print(f"Key {key} found at index {pos}.")
-                return
-
-        print(f"Key {key} not found.")
+        print(f"Key {key} not found. Probes: {probes}")
+        return False
 
     def display(self):
-        print("\nHash Table:")
-        print("Index\tValue")
-        print("----------------")
+        print(f"\nHASH TABLE ({METHODS.get(self.method, 'Unknown')})")
+        print("-" * 35)
+        for i, item in enumerate(self.table):
+            value = "EMPTY" if item is None or (self.method == 1 and not item) else item
+            print(f"{i:<8}{value}")
 
-        for i in range(self.size):
-            if self.method == 1:
-                value = (
-                    " -> ".join(map(str, self.table[i])) if self.table[i] else "EMPTY"
-                )
-            else:
-                value = self.table[i] if self.table[i] is not None else "EMPTY"
-
-            print(f"{i}\t{value}")
-
-    def evaluate_performance(self):
-        load_factor = self.count / self.size
-
-        print("\nPerformance Evaluation")
-        print("---------------------")
-        print(f"Number of keys  : {self.count}")
-        print(f"Table size      : {self.size}")
-        print(f"Load factor     : {load_factor:.2f}")
-        print(f"Collisions      : {self.collisions}")
-
-        if self.method != 1 and self.count > 0:
-            print(f"Average probes  : {self.total_probes / self.count:.2f}")
-
-        if self.method == 4:
-            print(f"Selected R      : {self.R}")
+    def performance(self):
+        average = self.total_probes / self.count if self.count else 0
+        print("\nPERFORMANCE STATISTICS")
+        print("-" * 30)
+        print("Table size:", self.size)
+        print("Keys stored:", self.count)
+        print("Collisions:", self.collisions)
+        print("Total insertion probes:", self.total_probes)
+        print(f"Average probes: {average:.2f}")
+        print(f"Load factor: {self.count / self.size:.2f}")
 
 
 def compare_performance(keys, size):
-    methods = {
-        1: "Separate Chaining",
-        2: "Linear Probing",
-        3: "Quadratic Probing",
-        4: "Double Hashing",
-    }
+    if not keys:
+        print("Insert keys before comparing performance.")
+        return
 
-    print("\nComparison of Collision Resolution Methods")
-    print("=" * 76)
-    print(
-        f"{'Method':<23}{'Inserted':<12}{'Collisions':<14}{'Load Factor':<12}{'Avg Probes':<12}"
-    )
-    print("-" * 76)
+    names, collisions, average_probes = [], [], []
+    print("\nPERFORMANCE COMPARISON")
+    print("-" * 65)
+    print(f"{'Method':<23}{'Inserted':<12}{'Collisions':<13}{'Avg Probes':<12}")
+    print("-" * 65)
 
-    for method, name in methods.items():
-        temp = HashTable(size, method)
-
+    for method, name in METHODS.items():
+        ht = HashTable(size, method)
         for key in keys:
-            temp.insert(key, silent=True)
+            ht.insert(key, report=False)
+        average = ht.total_probes / ht.count if ht.count else 0
+        names.append(name)
+        collisions.append(ht.collisions)
+        average_probes.append(average)
+        print(f"{name:<23}{ht.count:<12}{ht.collisions:<13}{average:.2f}")
 
-        load_factor = temp.count / size
-        avg_probes = temp.total_probes / temp.count if temp.count else 0
+    print("-" * 65)
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    charts = [
+        (collisions, "Collision Comparison", "Number of Collisions", True),
+        (average_probes, "Average Insertion Probes", "Average Number of Probes", False),
+    ]
 
-        print(
-            f"{name:<23}"
-            f"{temp.count:<12}"
-            f"{temp.collisions:<14}"
-            f"{load_factor:<12.2f}"
-            f"{avg_probes:<12.2f}"
-        )
+    for ax, (values, title, ylabel, whole_numbers) in zip(axes, charts):
+        bars = ax.bar(names, values)
+        ax.set_title(title)
+        ax.set_xlabel("Hashing Method")
+        ax.set_ylabel(ylabel)
+        ax.tick_params(axis="x", rotation=25)
+        for bar, value in zip(bars, values):
+            label = str(value) if whole_numbers else f"{value:.2f}"
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height(),
+                label,
+                ha="center",
+                va="bottom",
+            )
 
-    print("=" * 76)
+    fig.suptitle("Hashing Performance Comparison")
+    plt.tight_layout()
+    plt.show()
 
 
 def main():
-    ht = None
+    size, hash_table, keys = 0, None, []
 
     while True:
         print("\n========== HASHING MENU ==========")
@@ -197,91 +184,75 @@ def main():
         print("3. Search Key")
         print("4. Display Hash Table")
         print("5. Evaluate Performance")
-        print("6. Compare All Methods")
+        print("6. Compare All Methods and Generate Graphs")
         print("7. Exit")
+        print("==================================")
+        choice = input("Enter choice: ").strip()
 
-        try:
-            choice = int(input("Enter your choice: "))
-
-            if choice == 1:
-                size = int(input("Enter the size of the hash table: "))
-
-                if size < 3:
+        if choice == "1":
+            try:
+                new_size = int(input("Enter table size (minimum 3): "))
+                if new_size < 3:
                     print("Table size must be at least 3.")
                     continue
-
-                print("\nSelect Collision Resolution Technique:")
-                print("1. Open Hashing (Separate Chaining)")
-                print("2. Closed Hashing (Linear Probing)")
-                print("3. Closed Hashing (Quadratic Probing)")
-                print("4. Closed Hashing (Double Hashing)")
-
-                method = int(input("Enter your choice: "))
-
-                if method not in (1, 2, 3, 4):
-                    print("Invalid method choice.")
+                print("\nSelect Hashing Method")
+                for number, name in METHODS.items():
+                    print(f"{number}. {name}")
+                method = int(input("Enter method: "))
+                if method not in METHODS:
+                    print("Invalid method.")
                     continue
 
-                ht = HashTable(size, method)
+                size, hash_table, keys = new_size, HashTable(new_size, method), []
+                for value in input("Enter initial keys separated by spaces: ").split():
+                    try:
+                        key = int(value)
+                        if key < 0:
+                            print("Negative keys are not supported.")
+                        elif hash_table.insert(key):
+                            keys.append(key)
+                    except ValueError:
+                        print(f"Invalid key skipped: {value}")
+                print("Hash table creation completed.")
+            except ValueError:
+                print("Enter a valid integer.")
 
-                if method == 4:
-                    print(f"Selected R: {ht.R}")
+        elif choice in ("2", "3"):
+            if hash_table is None:
+                print("Create a hash table first.")
+                continue
+            try:
+                prompt = (
+                    "Enter key to insert: "
+                    if choice == "2"
+                    else "Enter key to search: "
+                )
+                key = int(input(prompt))
+                if key < 0:
+                    print("Negative keys are not supported.")
+                elif choice == "2":
+                    if hash_table.insert(key):
+                        keys.append(key)
+                else:
+                    hash_table.search(key)
+            except ValueError:
+                print("Enter a valid integer.")
 
-                keys_input = input(
-                    "Enter the keys to insert (space-separated): "
-                ).split()
-
-                for key in keys_input:
-                    ht.insert(int(key))
-
-            elif choice == 2:
-                if ht is None:
-                    print("Create a hash table first.")
-                    continue
-
-                ht.insert(int(input("Enter key to insert: ")))
-
-            elif choice == 3:
-                if ht is None:
-                    print("Create a hash table first.")
-                    continue
-
-                ht.search(int(input("Enter key to search: ")))
-
-            elif choice == 4:
-                if ht is None:
-                    print("Create a hash table first.")
-                    continue
-
-                ht.display()
-
-            elif choice == 5:
-                if ht is None:
-                    print("Create a hash table first.")
-                    continue
-
-                ht.evaluate_performance()
-
-            elif choice == 6:
-                if ht is None:
-                    print("Create a hash table first.")
-                    continue
-
-                if not ht.keys_inserted:
-                    print("The hash table is empty.")
-                    continue
-
-                compare_performance(ht.keys_inserted, ht.size)
-
-            elif choice == 7:
-                print("Exiting program.")
-                break
-
+        elif choice in ("4", "5", "6"):
+            if hash_table is None:
+                print("Create a hash table first.")
+            elif choice == "4":
+                hash_table.display()
+            elif choice == "5":
+                hash_table.performance()
             else:
-                print("Invalid choice. Try again.")
+                compare_performance(keys, size)
 
-        except ValueError:
-            print("Please enter valid integer values.")
+        elif choice == "7":
+            print("Exiting program.")
+            break
+        else:
+            print("Invalid choice. Enter 1-7.")
 
 
 if __name__ == "__main__":
